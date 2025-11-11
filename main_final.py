@@ -20,7 +20,6 @@ st.set_page_config(page_title="Wiki Survey", layout="wide", page_icon="🗳️")
 # === Configuration MongoDB ===
 #MONGO_URI = "mongodb://localhost:27017/"
 MONGO_URI= "mongodb://mongo:ofDhKxVkRoKUVRDAZlIEnEKErUUuZzhr@interchange.proxy.rlwy.net:15003"
-#MONGO_URI = "mongodb://mongo:JiwSbeZEXWiILqHARYsOnvkCOenDSKoY@shuttle.proxy.rlwy.net:28806"
 DB_NAME = "Africa"
 
 # 🔧 FONCTION POUR CONVERTIR LES ObjectId
@@ -49,85 +48,6 @@ def get_db_connection():
     except Exception as e:
         st.error(f"Erreur de connexion à MongoDB: {e}")
         return None
-
-# === Création des collections et index ===
-def init_database():
-    """Initialiser la structure de la base MongoDB"""
-    try:
-        db = get_db_connection()
-
-        # Créer les collections si elles n'existent pas
-        collections = [
-            "navigateur", "login", "question",
-            "idees", "vote", "commentaire",
-            "profil", "sentiment_analytics"
-        ]
-
-        for collection in collections:
-            if collection not in db.list_collection_names():
-                db.create_collection(collection)
-
-        # Créer les index
-        db.login.create_index("email", unique=True)
-        db.idees.create_index("id_question")
-        db.vote.create_index([("id_navigateur", 1), ("id_question", 1)], unique=True)
-        db.profil.create_index("id_navigateur", unique=True)
-        db.sentiment_analytics.create_index("id_question", unique=True)
-
-        # Insérer des données de test (administrateur et utilisateur avec droit d'image)
-        db.login.update_one(
-            {"email": "admin@test.com"},
-            {"$set": {
-                "email": "admin@test.com",
-                "mot_de_passe": "admin123", 
-                "date_creation": datetime.now()
-            }},
-            upsert=True
-        )
-        
-        # AJOUT DE L'UTILISATEUR "yinnaasome@gmail.com" AVEC LE DROIT D'IMAGE
-        db.login.update_one(
-            {"email": "yinnaasome@gmail.com"},
-            {"$set": {
-                "email": "yinnaasome@gmail.com",
-                "mot_de_passe": "abc", 
-                "date_creation": datetime.now()
-            }},
-            upsert=True
-        )
-
-        print("✅ Base MongoDB initialisée avec succès")
-        return True
-
-    except Exception as e:
-        print(f"❌ Erreur initialisation MongoDB: {e}")
-        return False
-
-# 🔧 FONCTION DE VÉRIFICATION ET CORRECTION DES DONNÉES
-def verifier_et_corriger_donnees():
-    """Vérifie et corrige les données manquantes dans la base"""
-    db = get_db_connection()
-    
-    # Corriger les idées sans champ creer_par_utilisateur
-    idees_sans_champ = db.idees.count_documents({"creer_par_utilisateur": {"$exists": False}})
-    if idees_sans_champ > 0:
-        db.idees.update_many(
-            {"creer_par_utilisateur": {"$exists": False}},
-            {"$set": {"creer_par_utilisateur": "non"}}
-        )
-        print(f"✅ Corrigé {idees_sans_champ} idées sans champ 'creer_par_utilisateur'")
-    
-    # Corriger les idées sans sentiment
-    idees_sans_sentiment = db.idees.count_documents({"sentiment_score": {"$exists": False}})
-    if idees_sans_sentiment > 0:
-        db.idees.update_many(
-            {"sentiment_score": {"$exists": False}},
-            {"$set": {
-                "sentiment_score": 0.0,
-                "sentiment_label": "Non analysé"
-            }}
-        )
-        print(f"✅ Corrigé {idees_sans_sentiment} idées sans analyse de sentiment")
 
 # === Analyse de sentiment ===
 def analyze_sentiment(text):
@@ -198,14 +118,6 @@ def update_sentiment_analytics(question_id):
     except Exception as e:
         st.error(f"Erreur mise à jour analytics: {e}")
 
-# Initialisation de la base
-if not init_database():
-    st.error("❌ Erreur initialisation MongoDB")
-    st.stop()
-
-# 🔧 VÉRIFICATION DES DONNÉES
-verifier_et_corriger_donnees()
-
 # Initialiser les clés nécessaires dans session_state
 if "page" not in st.session_state:
     st.session_state["page"] = "home"
@@ -262,15 +174,20 @@ def init_navigateur():
         if id_navigateur:
             st.session_state["id_navigateur"] = id_navigateur
             db = get_db_connection()
-            db.navigateur.update_one(
-                {"id_navigateur": id_navigateur},
-                {"$set": {
-                    "id_navigateur": id_navigateur,
-                    "navigateur": navigateur_nom,
-                    "date_creation": datetime.now()
-                }},
-                upsert=True
-            )
+            # Enregistrer seulement le navigateur sans créer/écraser d'autres données
+            try:
+                db.navigateur.update_one(
+                    {"id_navigateur": id_navigateur},
+                    {"$set": {
+                        "id_navigateur": id_navigateur,
+                        "navigateur": navigateur_nom,
+                        "date_creation": datetime.now()
+                    }},
+                    upsert=True
+                )
+            except Exception as e:
+                # Ignorer les erreurs de connexion à la DB au démarrage
+                pass
 
 # Appel obligatoire
 init_navigateur()
@@ -297,7 +214,7 @@ def creer_compte():
             st.error("Les mots de passe ne correspondent pas.")
             return
 
-        # Vérifier si l'email existe déjà 
+        # Vérifier si l'email existe déjà  
         if db.login.find_one({"email": email_reg}):
             st.error("Cet email est déjà utilisé. Veuillez vous connecter.")
             return
@@ -342,7 +259,7 @@ def login_page():
 
 def authentication_flow():
     """Gère la connexion et la création de compte via des onglets"""
-    tab_login, tab_register = st.tabs(["🔒 Se connecter", "✏️ Créer un compte"])
+    tab_login, tab_register = st.tabs(["🔐 Se connecter", "✏️ Créer un compte"])
 
     with tab_login:
         login_page()
@@ -433,8 +350,7 @@ def participer():
         return
 
     selected_question = questions[st.session_state.current_question_index]
-    #st.subheader(f"Question : {selected_question['question']}")
-    st.subheader(selected_question['question'])
+    st.subheader(f"Question : {selected_question['question']}")
     question_id = selected_question["_id"]
 
     # Récupérer les idées pour cette question
@@ -444,12 +360,12 @@ def participer():
         choices = random.sample(ideas, 2)
         col1, col2 = st.columns(2)
         with col1:
-            if st.button(choices[0]['idee_texte'], key=f"btn1_{question_id}"):
+            if st.button(choices[0]['idee_texte'], use_container_width=True):
                 enregistrer_vote(choices[0]['_id'], choices[1]['_id'], question_id)
                 st.session_state.current_question_index += 1
                 st.rerun()
         with col2:
-            if st.button(choices[1]['idee_texte'], key=f"btn2_{question_id}"):
+            if st.button(choices[1]['idee_texte'], use_container_width=True):
                 enregistrer_vote(choices[1]['_id'], choices[0]['_id'], question_id)
                 st.session_state.current_question_index += 1
                 st.rerun()
@@ -560,7 +476,6 @@ def afficher_formulaire_profil():
         })
         st.success("✅ Profil enregistré avec succès.")
 
-# 🔧 FONCTION VOIR_RESULTATS COMPLÈTEMENT CORRIGÉE
 def voir_resultats():
     st.title("📊 Résultats des votes par question")
 
@@ -588,9 +503,12 @@ def voir_resultats():
             st.warning("Aucune question avec des idées trouvée.")
             return
 
+        # Convertir tous les ObjectId
+        questions_avec_idees = convertir_objectid_pour_streamlit(questions_avec_idees)
+
         # Traitement de chaque question
         for question_doc in questions_avec_idees:
-            question_id = question_doc["_id"]
+            question_id = question_doc["_id"]  # Maintenant c'est une string
             question_text = question_doc["question"]
             idees = question_doc["idees"]
 
@@ -599,11 +517,19 @@ def voir_resultats():
             # Calculer les statistiques de vote pour chaque idée
             data = []
             for idee in idees:
-                idee_id = idee["_id"]
+                idee_id = idee["_id"]  # Maintenant c'est une string
                 
-                # Compter les victoires et défaites
-                victoires = db.vote.count_documents({"id_idee_gagnant": idee_id})
-                defaites = db.vote.count_documents({"id_idee_perdant": idee_id})
+                # Convertir en ObjectId pour la requête MongoDB
+                from bson import ObjectId
+                try:
+                    idee_objectid = ObjectId(idee_id)
+                    # Compter les victoires et défaites
+                    victoires = db.vote.count_documents({"id_idee_gagnant": idee_objectid})
+                    defaites = db.vote.count_documents({"id_idee_perdant": idee_objectid})
+                except:
+                    # Si la conversion échoue, utiliser la string directement
+                    victoires = db.vote.count_documents({"id_idee_gagnant": idee_id})
+                    defaites = db.vote.count_documents({"id_idee_perdant": idee_id})
                 
                 total = victoires + defaites
                 score = round((victoires / total) * 100, 2) if total > 0 else 0.0
@@ -703,7 +629,6 @@ def afficher_comparaison_par_score_et_sentiment(df):
     combined = alt.hconcat(scatter + hline + vline, hist_sentiment)
     st.altair_chart(combined, use_container_width=True)
 
-# 🔧 FONCTION STATISTIQUES_VOTES CORRIGÉE
 def afficher_statistiques_votes():
     """Dashboard des statistiques de votes pour une question sélectionnée"""
     st.title("📊 Statistiques des Votes")
@@ -716,6 +641,9 @@ def afficher_statistiques_votes():
     if not questions:
         st.warning("Aucune question disponible.")
         return
+
+    # Convertir les ObjectId
+    questions = convertir_objectid_pour_streamlit(questions)
 
     # Liste déroulante pour sélectionner la question
     question_options = {f"{q['question'][:80]}..." if len(q['question']) > 80 else q['question']: q['_id'] for q in questions}
@@ -730,22 +658,33 @@ def afficher_statistiques_votes():
 
     # Version simplifiée pour éviter les erreurs de pipeline
     try:
+        # Convertir l'ID en ObjectId pour les requêtes
+        from bson import ObjectId
+        try:
+            question_objectid = ObjectId(selected_question_id)
+        except:
+            question_objectid = selected_question_id
+
         # Récupérer tous les votes pour cette question
-        votes = list(db.vote.find({"id_question": selected_question_id}))
+        votes = list(db.vote.find({"id_question": question_objectid}))
         
         if not votes:
             st.warning("Aucune donnée de vote disponible pour cette question.")
             return
 
         # Récupérer toutes les idées de cette question
-        idees = list(db.idees.find({"id_question": selected_question_id}))
+        idees = list(db.idees.find({"id_question": question_objectid}))
+        
+        # Convertir les ObjectId des idées
+        idees = convertir_objectid_pour_streamlit(idees)
+        votes = convertir_objectid_pour_streamlit(votes)
         
         # Calculer les statistiques pour chaque idée
         data_votes = []
         for idee in idees:
-            idee_id = idee["_id"]
-            victoires = sum(1 for vote in votes if vote["id_idee_gagnant"] == idee_id)
-            defaites = sum(1 for vote in votes if vote["id_idee_perdant"] == idee_id)
+            idee_id = idee["_id"]  # Maintenant c'est une string
+            victoires = sum(1 for vote in votes if str(vote["id_idee_gagnant"]) == str(idee_id))
+            defaites = sum(1 for vote in votes if str(vote["id_idee_perdant"]) == str(idee_id))
             total = victoires + defaites
             pourcentage = round((victoires / total) * 100, 1) if total > 0 else 0
 
@@ -983,6 +922,9 @@ def afficher_comparaison_sentiment_questions():
         st.warning("Aucune donnée d'analytics disponible pour la comparaison.")
         return
 
+    # Convertir les ObjectId avant traitement
+    data_comparison = convertir_objectid_pour_streamlit(data_comparison)
+
     # Préparer les données pour visualisation comparative
     comparison_data = []
     for row in data_comparison:
@@ -995,7 +937,7 @@ def afficher_comparaison_sentiment_questions():
         if moyenne_idees is not None:
             comparison_data.append({
                 'Question': question_courte,
-                'ID': row['id_question'],
+                'ID': str(row['id_question']),  # Conversion explicite en string
                 'Score_Sentiment': float(moyenne_idees),
                 'Type_Contenu': 'Idées'
             })
@@ -1003,7 +945,7 @@ def afficher_comparaison_sentiment_questions():
         if moyenne_comms is not None:
             comparison_data.append({
                 'Question': question_courte,
-                'ID': row['id_question'],
+                'ID': str(row['id_question']),  # Conversion explicite en string
                 'Score_Sentiment': float(moyenne_comms),
                 'Type_Contenu': 'Commentaires'
             })
@@ -1224,5 +1166,6 @@ def main():
 
 # === Point d'entrée ===
 if __name__ == "__main__":
-
     main()
+
+

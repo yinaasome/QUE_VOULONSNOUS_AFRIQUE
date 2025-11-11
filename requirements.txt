@@ -1,0 +1,13 @@
+streamlit
+streamlit-javascript
+pymongo
+pandas
+numpy
+scikit-learn
+nltk
+matplotlib
+seaborn
+wordcloud
+textblob
+setuptools>=42
+wheel

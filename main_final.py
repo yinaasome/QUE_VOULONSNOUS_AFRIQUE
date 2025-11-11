@@ -18,7 +18,8 @@ import base64
 st.set_page_config(page_title="Wiki Survey", layout="wide", page_icon="🗳️")
 
 # === Configuration MongoDB ===
-MONGO_URI = "mongodb://localhost:27017/"
+#MONGO_URI = "mongodb://localhost:27017/"
+MONGO_URI= "mongodb://mongo:ofDhKxVkRoKUVRDAZlIEnEKErUUuZzhr@interchange.proxy.rlwy.net:15003"
 #MONGO_URI = "mongodb://mongo:JiwSbeZEXWiILqHARYsOnvkCOenDSKoY@shuttle.proxy.rlwy.net:28806"
 DB_NAME = "Africa"
 
@@ -1223,4 +1224,5 @@ def main():
 
 # === Point d'entrée ===
 if __name__ == "__main__":
+
     main()
